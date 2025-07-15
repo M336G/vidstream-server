@@ -1,0 +1,17 @@
+{
+  "name": "vidstream-server",
+  "description": "Backend of Vidstream, a website where you can upload videos to watch them live with your friends!",
+  "version": "1.0.0",
+  "main": "app.js",
+  "author": "M336",
+  "scripts": {
+    "start": "bun app.js --max-executable-size=192 --max-old-space-size=256 --max-semi-space-size=2",
+    "dev": "bun --watch --dev app.js --max-executable-size=192 --max-old-space-size=256 --max-semi-space-size=2",
+    "watch": "bun --watch app.js --max-executable-size=192 --max-old-space-size=256 --max-semi-space-size=2"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0",
+    "file-type": "^21.0.0"
+  }
+}
