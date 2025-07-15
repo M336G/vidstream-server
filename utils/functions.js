@@ -135,7 +135,6 @@ async function startStream(stream) {
         stderr: "pipe",
     });
 
-    // Read ffmpeg stderr as a stream
     (async () => {
         const reader = ffmpeg.stderr.getReader();
         try {
