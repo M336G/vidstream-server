@@ -5,7 +5,6 @@ import { fileTypeFromBlob } from "file-type";
 
 import { generateRandomString, getBestBitrate, getBestFramerate, getBestQuality, getVideoMetadata, startStream } from "./utils/functions.js";
 import { Headers, supportedFileMimes } from "./utils/utilities.js";
-//import { RegexCheck } from "./utils/security.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_UPLOAD_SIZE = Number(process.env.MAX_UPLOAD_SIZE) || 2 * 1024 * 1024 * 1024; // 2 GB in bytes
@@ -141,22 +140,10 @@ const server = Bun.serve({
                     return;
                 }
 
-                /*if (!data.username) {
-                    ws.send(JSON.stringify({ success: false, cause: "No username supplied!" }));
-                    ws.close();
-                    return;
-                }
-                if (!RegexCheck.username(data.username)) {
-                    ws.send(JSON.stringify({ success: false, cause: `Only alphabetical characters (from any alphabet), numbers, spaces and the characters ".-_@" are allowed for a username! (minimum 3 characters, maximum 20 characters)` }));
-                    ws.close();
-                    return;
-                }*/
-
                 const streamToken = global.streams.get(data.stream).token;
 
                 ws.subscribe(data.stream);
                 websocketClients.set(ws, {
-                    //username: data.username,
                     stream: data.stream,
                     host: streamToken == data.token
                 });
@@ -193,47 +180,7 @@ const server = Bun.serve({
                 global.streams.set(client.stream, stream);
 
                 ws.send(JSON.stringify({ success: true, message: "Stream started!" }));
-            } /*else if (data.type == "pause") {
-                if (stream.state != "started" || !global.ffmpegProcesses.has(client.stream)) return ws.send(JSON.stringify({ success: false, cause: "This stream hasn't started yet!" }));
-                if (!client.host) return ws.send(JSON.stringify({ success: false, cause: "You're not the host!" }));
-
-                const ffmpeg = global.ffmpegProcesses.get(client.stream);
-                ffmpeg.kill("SIGSTOP");
-
-                client.host = true;
-                websocketClients.set(ws, client);
-                stream.state = "paused";
-                stream.keepAlive = Date.now();
-                global.streams.set(client.stream, stream);
-
-                ws.send(JSON.stringify({ success: true, message: "Stream paused!" }));
-            } else if (data.type == "continue") {
-                if (stream.state != "paused") return ws.send(JSON.stringify({ success: false, cause: "This stream hasn't been paused yet!" }));
-                if (!client.host) return ws.send(JSON.stringify({ success: false, cause: "You're not the host!" }));
-
-                const ffmpeg = global.ffmpegProcesses.get(client.stream);
-                ffmpeg.kill("SIGCONT");
-
-                client.host = true;
-                websocketClients.set(ws, client);
-                stream.state = "started";
-                stream.keepAlive = Date.now();
-                global.streams.set(client.stream, stream);
-
-                ws.send(JSON.stringify({ success: true, message: "Stream continued!" }));
-            } else if (data.type == "stop") {
-                if (!client.host) return ws.send(JSON.stringify({ success: false, cause: "You're not the host!" }));
-
-                const ffmpeg = global.ffmpegProcesses.get(client.stream);
-                ffmpeg.kill("SIGKILL");
-
-                await rm(stream.filePath, { recursive: true, force: true });
-                await rmdir(stream.directoryPath, { recursive: true, force: true });
-
-                global.streams.delete(client.stream);
-                global.ffmpegProcesses.delete(client.stream);
-                ws.close();
-            }*/ else {
+            } else {
                 ws.send(JSON.stringify({ success: false, cause: "This type doesn't exist!" }));
             }
         },
