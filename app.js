@@ -1,5 +1,5 @@
 import { rm } from "node:fs/promises";
-import { mkdirSync, rmdirSync } from "node:fs";
+import { mkdirSync, rmdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileTypeFromBlob } from "file-type";
 
@@ -12,8 +12,8 @@ const MAX_KEEP_ALIVE = Number(process.env.MAX_KEEP_ALIVE) || 1 * 60 * 60 * 1000;
 
 global.STREAMS_DIR = join(__dirname, "streams");
 // Just a cleanup
-rmdirSync(global.STREAMS_DIR, { recursive: true, force: true })
-mkdirSync(global.STREAMS_DIR, { recursive: true, force: true });
+if (existsSync(global.STREAMS_DIR)) rmdirSync(global.STREAMS_DIR, { recursive: true, force: true })
+if (!existsSync(global.STREAMS_DIR)) mkdirSync(global.STREAMS_DIR, { recursive: true, force: true });
 
 global.streams = new Map();
 global.ffmpegProcesses = new Map();
