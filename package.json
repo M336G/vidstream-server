@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "main": "app.js",
   "author": "M336",
+  "license": "MPL-2.0",
   "scripts": {
     "start": "bun app.js --max-executable-size=192 --max-old-space-size=256 --max-semi-space-size=2",
     "dev": "bun --watch --dev app.js --max-executable-size=192 --max-old-space-size=256 --max-semi-space-size=2",
