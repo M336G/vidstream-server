@@ -7,8 +7,8 @@ import { generateRandomString, getBestBitrate, getBestFramerate, getBestQuality,
 import { Headers, supportedFileMimes } from "./utils/utilities.js";
 
 const PORT = Number(process.env.PORT) || 4949;
-const MAX_UPLOAD_SIZE = Number(process.env.MAX_UPLOAD_SIZE) || 200 * 1024 * 1024; // 200 megabytes in bytes
-const MAX_KEEP_ALIVE = Number(process.env.MAX_KEEP_ALIVE) || 1 * 60 * 60 * 1000; // 1 minute in milliseconds
+const MAX_UPLOAD_SIZE = Number(process.env.MAX_UPLOAD_SIZE) ? Number(process.env.MAX_UPLOAD_SIZE) * 1024 * 1024 : 200 * 1024 * 1024; // 200 megabytes in bytes
+const MAX_KEEP_ALIVE = Number(process.env.MAX_KEEP_ALIVE) ? Number(process.env.MAX_KEEP_ALIVE) * 60 * 60 * 1000 : 1 * 60 * 60 * 1000; // 1 minute in milliseconds
 
 global.STREAMS_DIR = join(__dirname, "streams");
 // Just a cleanup
