@@ -46,25 +46,6 @@ async function exists(path) {
     }
 }
 
-async function getClientIP(request) {
-    const headers = request.headers
-
-    // Start by checking if Cloudflare forwarded the IP
-    let cfConnectingIP = headers.get("cf-connecting-ip");
-    if (cfConnectingIP) return cfConnectingIP;
-
-    // Check if NGINX X-Real-IP is supplied if not
-    let xRealIP = headers.get("x-real-ip");
-    if (xRealIP) return xRealIP;
-
-    // If not then also check if NGINX has supplied X-Forwarded-For, and return the first IP of the list
-    let xForwardedFor = headers.get("x-forwarded-for");
-    if (xForwardedFor) return xForwardedFor.split(",")[0].trim();
-
-    // If none of them are supplied, just supply the original address in the request
-    return request.remoteAddr;
-}
-
 async function generateRandomString(length = 32) {
     const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     const charsetLength = charset.length;
@@ -155,6 +136,7 @@ async function startStream(stream) {
         cmd: [
             ffmpegBinary,
             "-loglevel", "error",
+            "-re",
             "-i", video,
             "-vf", `scale=${width}x${height}`,
             "-r", `${fps}`,
@@ -237,7 +219,6 @@ async function killStream(id, streamPath = null) {
 
 export {
     log,
-    getClientIP,
     generateRandomString,
     getVideoMetadata,
     getBestQuality,

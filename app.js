@@ -4,6 +4,7 @@ import { fileTypeFromBlob } from "file-type";
 
 import { log, generateRandomString, getBestBitrate, getBestFramerate, getBestQuality, getVideoMetadata, killStream, startStream } from "./utils/functions.js";
 import { Headers, supportedFileMimes } from "./utils/utilities.js";
+import { RegexCheck } from "./utils/security.js";
 
 // Get environment variables
 const PORT = Number(process.env.PORT) || 4949;
@@ -115,15 +116,13 @@ const server = Bun.serve({
                 const { streamID, segment } = req.params;
 
                 // Prevent client from accessing other files
-                if ((!segment.endsWith(".ts") && !segment.endsWith(".m3u8")) || !global.streams.has(streamID)) {
+                if ((!segment.endsWith(".ts") && !segment.endsWith(".m3u8")) || !global.streams.has(streamID))
                     return new Response("Not Found", { headers: Headers.segment, status: 404 });
-                }
 
                 // Try to get the segment
                 const streamPath = join(streamsDirectory, streamID, segment);
-                if (!await Bun.file(streamPath).exists()) {
+                if (!await Bun.file(streamPath).exists())
                     return new Response("Not Found", { headers: Headers.segment, status: 404 });
-                }
 
                 // Return the segment
                 return new Response(Bun.file(streamPath).stream(), {
@@ -165,13 +164,35 @@ const server = Bun.serve({
                 return ws.send(JSON.stringify({ success: false, type: data.type, cause: "Invalid JSON" }));
             }
 
+            // Check if a stream ID's been supplied
+            if (!data.stream) {
+                ws.send(JSON.stringify({ success: false, type: data.type, cause: `No stream supplied!` }));
+
+                ws.close();
+                return;
+            }
+
             // Check if the client is even in the object
             if (!websocketClients.has(ws)) {
-                // Check if the client specified a stream or if
-                // he's trying to watch a stream that doesn't exist
+                // Check if the client is trying to watch a stream that doesn't exist
                 if (!data.stream || !global.streams.has(data.stream)) {
                     ws.send(JSON.stringify({ success: false, type: data.type, cause: `Stream ${data.stream} doesn't exist!` }));
-                    
+
+                    ws.close();
+                    return;
+                }
+
+                // Check if the client supplied a username
+                if (!data.username) {
+                    ws.send(JSON.stringify({ success: false, type: data.type, cause: "No username supplied!" }));
+
+                    ws.close();
+                    return;
+                }
+                // Check if the username supplied is valid
+                if (!await RegexCheck.username(data.username)) {
+                    ws.send(JSON.stringify({ success: false, type: data.type, cause: "Only alphabetical characters, numbers, spaces and the characters '.-_@' are allowed in a username (minimum 3 characters, maximum 20 characters)!" }));
+
                     ws.close();
                     return;
                 }
@@ -183,25 +204,29 @@ const server = Bun.serve({
                 // and add him to the websocketClients object
                 ws.subscribe(data.stream);
                 websocketClients.set(ws, {
+                    username: data.username,
+                    ip: ws.remoteAddress,
+                    country: (await (await fetch(`https://ipapi.co/${ws.remoteAddress}/json/`)).json())?.country_code,
                     stream: data.stream,
                     host: streamToken == data.token
                 });
-                
+
                 ws.send(JSON.stringify({ success: true, type: data.type, message: `Now watching stream ${data.stream}!` }));
                 return;
             }
 
             // If the client is in the object, just get them here
             const client = websocketClients.get(ws);
-            const stream = global.streams.get(client.stream);
 
-            // Check if the stream they watch still exists
-            if (!data.stream || !global.streams.has(data.stream)) {
-                ws.send(JSON.stringify({ success: false, type: data.type, cause: `Stream ${data.stream} doesn't exist!` }));
-                
+            // Check if the stream has ended
+            if (!global.streams.has(client.stream)) {
+                ws.send(JSON.stringify({ success: false, type: data.type, cause: `Stream ${data.stream} ended!` }));
+
                 ws.close();
                 return;
             }
+
+            const stream = global.streams.get(client.stream);
 
             // Handle the client's request type
             switch (data.type) {
@@ -229,7 +254,22 @@ const server = Bun.serve({
 
                     ws.send(JSON.stringify({ success: true, type: data.type, message: "Keep alive registered!" }));
                     break;
+                case "message": // Send messages
+                    if (!data.message)
+                        return ws.send(JSON.stringify({ success: false, type: data.type, cause: "No message!" }));
 
+                    stream.keepAlive = Date.now();
+                    global.streams.set(client.stream, stream);
+
+                    server.publish(client.stream, JSON.stringify({
+                        success: true,
+                        type: data.type,
+                        username: client.username,
+                        host: client.host,
+                        country: client.country,
+                        message: data.message
+                    }));
+                    break;
                 /*case "stop": // Stop a stream entirely
                     if (!client.host)
                         return ws.send(JSON.stringify({ success: false, type: data.type, cause: "You're not the host!" }));
@@ -288,7 +328,7 @@ setInterval(async () => {
             }));
         }
     }
-}, 1000); // Every second
+}, 10_000); // Every 10 seconds
 
 // Check if ffmpegProcesses exists in the stream object
 setInterval(async () => {
