@@ -35,5 +35,4 @@ USER vidstreamuser
 EXPOSE 4949/tcp
 
 # Entrypoint and command
-ENTRYPOINT ["bun"]
-CMD ["start"]
+CMD ["/bin/sh", "-c", "git pull && bun start"]
