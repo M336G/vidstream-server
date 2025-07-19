@@ -8,6 +8,10 @@ const Headers = {
         "Expires": "0",
         "Surrogate-Control": "no-store"
     },
+    info: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS"
+    },
     upload: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",

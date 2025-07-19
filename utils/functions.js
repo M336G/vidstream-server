@@ -1,8 +1,50 @@
 import { randomBytes } from "crypto";
 import ffmpegBinary from "ffmpeg-static";
 import ffprobeBinary from "ffprobe-static";
-import { mkdir, rm, rmdir } from "node:fs/promises";
+import { mkdir, rm, rmdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+
+// Simplified logging functions
+const log = {
+    // Log a fatal error
+    fatal: async (message, fatal) => {
+        console.error(`[FATAL] ${message}${fatal ? ` ${fatal}` : ""}`);
+    },
+
+    // Log an error
+    error: async (message, error) => {
+        console.error(`[ERROR] ${message}${error ? ` ${error}` : ""}`);
+    },
+
+    // Log a warning
+    warn: async (message, warn) => {
+        console.warn(`[WARN] ${message}${warn ? ` ${warn}` : ""}`);
+    },
+
+    // Log an info
+    info: async (message, info) => {
+        console.info(`[INFO] ${message}${info ? ` ${info}` : ""}`);
+    },
+
+    // Log a debug info
+    debug: async (message, debug) => {
+        console.debug(`[DEBUG] ${message}${debug ? ` ${debug}` : ""}`);
+    },
+
+    // Log a trace info
+    trace: async (message, trace) => {
+        console.trace(`[TRACE] ${message}${trace ? ` ${trace}` : ""}`);
+    }
+};
+
+async function exists(path) {
+    try {
+        await stat(path);
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 async function getClientIP(request) {
     const headers = request.headers
@@ -104,22 +146,21 @@ async function getBestBitrate(width, height, framerate) {
     }
 }
 
-
 async function startStream(stream) {
-    const { id, filePath, directoryPath, width, height, fps, bitrate } = stream;
+    const { id, video, directory, width, height, fps, bitrate } = stream;
 
-    await mkdir(directoryPath, { recursive: true, force: true });
+    await mkdir(directory, { recursive: true, force: true });
 
     const ffmpeg = Bun.spawn({
         cmd: [
             ffmpegBinary,
             "-loglevel", "error",
-            "-i", filePath,
+            "-i", video,
             "-vf", `scale=${width}x${height}`,
             "-r", `${fps}`,
             "-c:v", "libx264",
             "-b:v", `${bitrate}`,
-            "-preset", "fast",
+            "-preset", "veryfast",
             "-g", `${fps * 2}`,
             "-keyint_min", `${fps * 2}`,
             "-sc_threshold", "0",
@@ -129,7 +170,7 @@ async function startStream(stream) {
             "-hls_time", "2",
             "-hls_list_size", "6",
             "-hls_flags", "delete_segments",
-            join(directoryPath, "index.m3u8"),
+            join(directory, "index.m3u8"),
         ],
         stdout: "pipe",
         stderr: "pipe",
@@ -143,45 +184,65 @@ async function startStream(stream) {
                 if (done) break;
                 if (value) {
                     const chunk = new TextDecoder().decode(value);
-                    console.error(`[ffmpeg:${id}] ${chunk}`);
+                    log.error(`[ffmpeg:${id}] ${chunk}`);
                 }
             }
         } catch (error) {
-            console.error(`[ffmpeg:${id} stderr read error]:`, error);
+            log.error(`[ffmpeg:${id} stderr read error]:`, error);
         } finally {
             reader.releaseLock();
         }
     })();
 
     ffmpeg.exited.then(async ({ code, signal }) => {
-        if (code !== 0 && code !== undefined) {
-            console.error(`[ffmpeg ${id} exited with code ${code}, signal ${signal}]`);
-        } else {
-            console.log(`[ffmpeg ${id} exited normally with code ${code}, signal ${signal}]`);
-        }
-        await rm(filePath, { force: true });
-        await rmdir(directoryPath, { recursive: true, force: true });
+        if (code !== 0 && code !== undefined)
+            log.error(`[ffmpeg ${id} exited with code ${code}, signal ${signal}]`);
+
+        // 10s delay to let users finish the stream
+        await new Promise(resolve => setTimeout(resolve, 10000));
+
+        await rmdir(directory, { recursive: true, force: true });
         global.streams.delete(id);
         global.ffmpegProcesses.delete(id);
     }).catch(async (error) => {
-        console.error(`[ffmpeg ${id} error]:`, error);
-        await rm(filePath, { force: true });
-        await rmdir(directoryPath, { recursive: true, force: true });
+        log.error(`[ffmpeg ${id} error]:`, error);
+
+        await rmdir(directory, { recursive: true, force: true });
         global.streams.delete(id);
         global.ffmpegProcesses.delete(id);
     });
 
-
     global.ffmpegProcesses.set(id, ffmpeg);
 }
 
+async function killStream(id, streamPath = null) {
+    // Try to kill ffmpeg and delete it from the ffmpegProcesses
+    if (global.ffmpegProcesses.has(id)) {
+        const ffmpeg = global.ffmpegProcesses.get(id)
+
+        ffmpeg.kill("SIGKILL");
+        global.ffmpegProcesses.delete(id);
+    }
+
+    // If streamPath is not supplied, try to get the path from the streams object
+    if (!streamPath && global.streams.has(id)) {
+        const stream = global.streams.get(id);
+        streamPath = stream.directory;
+    }
+
+    // Try to delete the stream's directory and also from the streams object
+    if (exists(streamPath)) await rmdir(streamPath, { recursive: true, force: true });
+    if (global.streams.has(id)) global.streams.delete(id);
+}
 
 export {
+    log,
     getClientIP,
     generateRandomString,
     getVideoMetadata,
     getBestQuality,
     getBestFramerate,
     getBestBitrate,
-    startStream
+    startStream,
+    killStream
 }
