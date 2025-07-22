@@ -2,7 +2,7 @@ import { randomBytes } from "crypto";
 import ffmpegBinary from "ffmpeg-static";
 import ffprobeBinary from "ffprobe-static";
 import { mkdir, rmdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, parse } from "node:path";
 
 import { encoderArgs, maxFramerate, maxResolution, resolutions } from "./utilities";
 
@@ -80,13 +80,41 @@ async function generateRandomString(length = 32) {
     return auth;
 }
 
+function parseFramerate(framerate) {
+    if (!framerate) return 0;
+
+    let fps;
+
+    if (typeof framerate === "number") {
+        fps = framerate;
+    } else if (typeof framerate === "string") {
+        if (framerate.includes("/")) {
+            const [num, den] = framerate.split("/").map(Number);
+            fps = den !== 0 ? num / den : 0;
+        } else {
+            fps = Number(framerate);
+        }
+    } else {
+        return 0;
+    }
+
+    if (isNaN(fps) || fps === 0) return 0;
+
+    if (Math.abs(fps - 240) < 5) return 240;
+    else if (Math.abs(fps - 120) < 5) return 120;
+    else if (Math.abs(fps - 60) < 10) return 60;
+    else if (Math.abs(fps - 30) < 5) return 30;
+
+    return fps;
+}
+
 async function getVideoMetadata(videoFilePath) {
     const proc = Bun.spawn({
         cmd: [
             ffprobeBinary.path,
             "-v", "error",
             "-select_streams", "v:0",
-            "-show_entries", "stream=width,height,r_frame_rate",
+            "-show_entries", "stream=width,height,avg_frame_rate",
             "-of", "json",
             videoFilePath
         ],
@@ -105,20 +133,17 @@ async function getVideoMetadata(videoFilePath) {
     let output;
     try {
         output = JSON.parse(stdoutText);
-    } catch (e) {
+    } catch (error) {
         throw new Error(`Failed to parse ffprobe JSON:\n${stdoutText}`);
     }
 
     const stream = output.streams?.[0];
     if (!stream) throw new Error("No video stream found");
 
-    const [num, denom] = stream.r_frame_rate.split("/").map(Number);
-    const framerate = denom ? num / denom : 30;
-
     return {
         width: stream.width,
         height: stream.height,
-        framerate
+        framerate: parseFramerate(stream.avg_frame_rate)
     };
 }
 

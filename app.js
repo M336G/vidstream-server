@@ -1,6 +1,7 @@
-import { mkdirSync, rmdirSync, existsSync } from "node:fs";
+import { mkdirSync, rmdirSync, existsSync, createWriteStream } from "node:fs";
+import { mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
-import { fileTypeFromBlob } from "file-type";
+import { fileTypeFromBuffer } from "file-type";
 
 import { log, generateRandomString, getBestBitrate, getBestFramerate, getBestQuality, getVideoMetadata, killStream, startStream, getClientIP } from "./utils/functions.js";
 import { Headers, supportedFileMimes } from "./utils/utilities.js";
@@ -24,7 +25,7 @@ let websocketClients = new Map();
 
 const server = Bun.serve({
     port: PORT,
-    maxUploadSize: MAX_UPLOAD_SIZE,
+    maxRequestBodySize: Number.MAX_SAFE_INTEGER, // i'd rather handle it myself
     development: process.argv.includes("--dev") || false,
 
     routes: {
@@ -61,47 +62,81 @@ const server = Bun.serve({
                 return new Response(null, { status: 204, headers: Headers.upload });
             },
             POST: async (req) => {
-                const video = await req.blob();
-                if (!video) return Response.json({ success: false, cause: "No video file provided!" }, { headers: Headers.upload, status: 400 });
-
-                // Get mime type and check if it's supported
-                const fileType = await fileTypeFromBlob(video);
-                if (!fileType) return Response.json({ success: false, cause: "Could not get your file's mime type" }, { headers: Headers.upload, status: 500 });
-                if (!supportedFileMimes.includes(fileType.mime)) return Response.json({ success: false, cause: "Unsupported video file type!" }, { headers: Headers.upload, status: 422 });
-
+                const MAX_PROBE_BYTES = 4100; // First 4 KB of the file for type detection
                 const id = await generateRandomString(32);
                 const token = await generateRandomString(16);
+                const directoryPath = join(streamsDirectory, id);
 
-                const directoryPath = join(streamsDirectory, id); // This is where all files related to that video will be stored
-                const videoPath = join(directoryPath, `video.${fileType.ext}`); // And here, the actual video
+                await mkdir(directoryPath, { recursive: true });
 
-                await Bun.write(videoPath, video); // Write the file
+                const tempPath = join(directoryPath, "video.tmp");
+                const fileStream = createWriteStream(tempPath);
+                const reader = req.body?.getReader();
 
-                // Get all the metadata for ffmpeg
-                const metadata = await getVideoMetadata(videoPath);
+                if (!reader) 
+                    return Response.json({ success: false, cause: "No readable stream!" }, { status: 400, headers: Headers.upload });
+
+                let totalBytes = 0;
+                let probeBuffer = Buffer.alloc(0);
+                let fileType;
+                let done = false;
+
+                while (!done) {
+                    const { value, done: streamDone } = await reader.read();
+                    if (value) {
+                        totalBytes += value.length;
+                        
+                        if (totalBytes > MAX_UPLOAD_SIZE) {
+                            fileStream.destroy();
+                            return Response.json({ success: false, cause: "File exceeds max upload size!" }, { status: 413, headers: Headers.upload });
+                        }
+
+                        if (probeBuffer.length < MAX_PROBE_BYTES) {
+                            probeBuffer = Buffer.concat([probeBuffer, Buffer.from(value)]);
+                            if (probeBuffer.length > MAX_PROBE_BYTES) probeBuffer = probeBuffer.slice(0, MAX_PROBE_BYTES);
+                        }
+
+                        if (!fileType && probeBuffer.length >= MAX_PROBE_BYTES) {
+                            const type = await fileTypeFromBuffer(probeBuffer);
+                            if (type) fileType = type;
+                        }
+
+                        fileStream.write(Buffer.from(value));
+                    }
+                    done = streamDone;
+                }
+
+                fileStream.end();
+
+                if (!fileType) fileType = await fileTypeFromBuffer(probeBuffer);
+
+                if (!fileType || !supportedFileMimes.includes(fileType.mime))
+                    return Response.json({ success: false, cause: "Unsupported or unknown file type!" }, { status: 422, headers: Headers.upload });
+
+                const finalVideoPath = join(directoryPath, `video.${fileType.ext}`);
+                await rename(tempPath, finalVideoPath);
+
+                const metadata = await getVideoMetadata(finalVideoPath);
+
                 const quality = await getBestQuality(metadata.width, metadata.height);
-                const framerate = await getBestFramerate(metadata.framerate)
+                const framerate = await getBestFramerate(metadata.framerate);
                 const bitrate = await getBestBitrate(quality.width, quality.height, framerate);
-
+                
                 const now = Date.now();
 
-                // Create the key in the streams object
                 global.streams.set(id, {
-                    id,
-                    token,
-                    state: "stopped",
-
+                    id, token, state: "stopped",
                     width: quality.width,
                     height: quality.height,
                     fps: framerate,
-                    bitrate: bitrate,
-
+                    bitrate,
                     directory: directoryPath,
-                    video: videoPath,
-
+                    video: finalVideoPath,
                     keepAlive: now,
                     timestamp: now
                 });
+
+                console.log(`[Stream] New stream:\n- ID: ${id}\n- Quality: ${quality.width}x${quality.height}\n- FPS: ${framerate}\n- Bitrate: ${bitrate}bps\n- Size: ${(totalBytes / 1024 / 1024).toFixed(2)} MB`);
 
                 return Response.json({ success: true, message: "Stream created!", id, token }, { headers: Headers.upload });
             }
@@ -276,9 +311,9 @@ const server = Bun.serve({
                 /*case "stop": // Stop a stream entirely
                     if (!client.host)
                         return ws.send(JSON.stringify({ success: false, type: data.type, cause: "You're not the host!" }));
-
+ 
                     await killStream(client.stream, stream.directory);
-
+ 
                     ws.send(JSON.stringify({ success: true, type: data.type, message: "Stream stopped!" }));
                     ws.close();
                     break;*/
