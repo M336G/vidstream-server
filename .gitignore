@@ -2,3 +2,4 @@ node_modules
 streams
 bun.lock
 .DS_Store
+.env

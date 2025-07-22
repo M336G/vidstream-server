@@ -1,8 +1,10 @@
 import { randomBytes } from "crypto";
 import ffmpegBinary from "ffmpeg-static";
 import ffprobeBinary from "ffprobe-static";
-import { mkdir, rm, rmdir, stat } from "node:fs/promises";
+import { mkdir, rmdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+
+import { encoderArgs, maxFramerate, maxResolution, resolutions } from "./utilities";
 
 // Simplified logging functions
 const log = {
@@ -102,25 +104,54 @@ async function getVideoMetadata(videoFilePath) {
 }
 
 async function getBestQuality(width, height) {
-    if (width >= 3840 && height >= 2160) return { width: 3840, height: 2160 };
-    else if (width >= 2560 && height >= 1440) return { width: 2560, height: 1440 };
-    else if (width >= 1920 && height >= 1080) return { width: 1920, height: 1080 };
-    else return { width: 1280, height: 720 };
+    const isPortrait = width < height;
+    if (isPortrait) [width, height] = [height, width];
+
+    let resolution;
+    if (maxResolution >= resolutions["8k"] && width >= 7680 && height >= 4320)
+        resolution = { width: 7680, height: 4320 };
+    else if (maxResolution >= resolutions["4k"] && width >= 3840 && height >= 2160)
+        resolution = { width: 3840, height: 2160 };
+    else if (maxResolution >= resolutions["1440p"] && width >= 2560 && height >= 1440)
+        resolution = { width: 2560, height: 1440 };
+    else if (maxResolution >= resolutions["1080p"] && width >= 1920 && height >= 1080)
+        resolution = { width: 1920, height: 1080 };
+    else
+        resolution = { width: 1280, height: 720 };
+
+    if (isPortrait) return { width: resolution.height, height: resolution.width };
+    else return resolution;
 }
 
 async function getBestFramerate(framerate) {
-    if (framerate >= 60) return 60;
-    else return 30
+    if (maxFramerate >= 240 && framerate >= 240) return 240;
+    else if (maxFramerate >= 120 && framerate >= 120) return 120;
+    else if (maxFramerate >= 60 && framerate >= 60) return 60;
+    else return 30;
 }
 
 async function getBestBitrate(width, height, framerate) {
-    if (framerate > 30) {
-        if (width >= 3840 && height >= 2160) return "68000k";
+    if (framerate >= 240) {
+        if (width >= 7680 && height >= 4320) return "960000k";
+        else if (width >= 3840 && height >= 2160) return "272000k";
+        else if (width >= 2560 && height >= 1440) return "96000k";
+        else if (width >= 1920 && height >= 1080) return "48000k";
+        else return "30000k";
+    } else if (framerate >= 120) {
+        if (width >= 7680 && height >= 4320) return "480000k";
+        else if (width >= 3840 && height >= 2160) return "136000k";
+        else if (width >= 2560 && height >= 1440) return "48000k";
+        else if (width >= 1920 && height >= 1080) return "24000k";
+        else return "15000k";
+    } else if (framerate >= 60) {
+        if (width >= 7680 && height >= 4320) return "240000k";
+        else if (width >= 3840 && height >= 2160) return "68000k";
         else if (width >= 2560 && height >= 1440) return "24000k";
         else if (width >= 1920 && height >= 1080) return "12000k";
         else return "7500k";
     } else {
-        if (width >= 3840 && height >= 2160) return "45000k";
+        if (width >= 7680 && height >= 4320) return "160000k";
+        else if (width >= 3840 && height >= 2160) return "45000k";
         else if (width >= 2560 && height >= 1440) return "16000k";
         else if (width >= 1920 && height >= 1080) return "8000k";
         else return "5000k";
@@ -140,9 +171,8 @@ async function startStream(stream) {
             "-i", video,
             "-vf", `scale=${width}x${height}`,
             "-r", `${fps}`,
-            "-c:v", "libx264",
+            ...encoderArgs,
             "-b:v", `${bitrate}`,
-            "-preset", "veryfast",
             "-g", `${fps * 2}`,
             "-keyint_min", `${fps * 2}`,
             "-sc_threshold", "0",
