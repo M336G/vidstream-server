@@ -2,7 +2,7 @@ import { mkdirSync, rmdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileTypeFromBlob } from "file-type";
 
-import { log, generateRandomString, getBestBitrate, getBestFramerate, getBestQuality, getVideoMetadata, killStream, startStream } from "./utils/functions.js";
+import { log, generateRandomString, getBestBitrate, getBestFramerate, getBestQuality, getVideoMetadata, killStream, startStream, getClientIP } from "./utils/functions.js";
 import { Headers, supportedFileMimes } from "./utils/utilities.js";
 import { RegexCheck } from "./utils/security.js";
 
@@ -136,7 +136,9 @@ const server = Bun.serve({
         },
 
         // Upgrade to websocket
-        "/ws": (req) => server.upgrade(req),
+        "/ws": async (req) => {
+            return server.upgrade(req, { data: { ip: await getClientIP(req) } });
+        },
 
         // If the endpoint is not found
         "/*": Response.json({ success: false, cause: "Not Found" }, { headers: { "Access-Control-Allow-Origin": "*" }, status: 404 })
@@ -202,11 +204,12 @@ const server = Bun.serve({
 
                 // Subscribe the client so that he can get information
                 // and add him to the websocketClients object
+
                 ws.subscribe(data.stream);
                 websocketClients.set(ws, {
                     username: data.username,
-                    ip: ws.remoteAddress,
-                    country: (await (await fetch(`https://ipapi.co/${ws.remoteAddress}/json/`)).json())?.country_code,
+                    ip: ws.data.ip,
+                    country: (await (await fetch(`https://ipapi.co/${ws.data.ip}/json/`)).json())?.country_code,
                     stream: data.stream,
                     host: streamToken == data.token
                 });
