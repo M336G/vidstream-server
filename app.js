@@ -244,7 +244,7 @@ const server = Bun.serve({
                 websocketClients.set(ws, {
                     username: data.username,
                     ip: ws.data.ip,
-                    country: (await (await fetch(`https://ipapi.co/${ws.data.ip}/json/`)).json())?.country_code,
+                    country: (await (await fetch(process.env.IPINFO_TOKEN ? `https://api.ipinfo.io/lite/${ws.data.ip}?token=${process.env.IPINFO_TOKEN}` : `https://ipapi.co/${ws.data.ip}/json/`)).json())?.country_code,
                     stream: data.stream,
                     host: streamToken == data.token
                 });
