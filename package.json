@@ -6,7 +6,7 @@
   "author": "M336",
   "license": "MPL-2.0",
   "scripts": {
-    "start": "bun app.js --max-executable-size=192 --max-old-space-size=256 --max-semi-space-size=2",
+    "start": "git pull && bun app.js --max-executable-size=192 --max-old-space-size=256 --max-semi-space-size=2",
     "dev": "bun --watch --dev app.js --max-executable-size=192 --max-old-space-size=256 --max-semi-space-size=2",
     "watch": "bun --watch app.js --max-executable-size=192 --max-old-space-size=256 --max-semi-space-size=2"
   },
